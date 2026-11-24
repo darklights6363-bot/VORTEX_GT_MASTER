@@ -1,0 +1,82 @@
+name: Vortex Android test APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [dev/vortex-driving]
+    paths: ['.github/workflows/android-test.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install the Godot 4.4.1 editor and Android export template
+        run: |
+          set -euo pipefail
+          version=4.4.1-stable
+          base="https://github.com/godotengine/godot-builds/releases/download/$version"
+          cd "$RUNNER_TEMP"
+          curl --fail --location --retry 3 -o editor.zip "$base/Godot_v${version}_linux.x86_64.zip"
+          curl --fail --location --retry 3 -o templates.tpz "$base/Godot_v${version}_export_templates.tpz"
+          unzip -q editor.zip
+          mkdir -p "$RUNNER_TEMP/godot-bin" "$HOME/.local/share/godot/export_templates/4.4.1.stable"
+          install -m 755 "Godot_v${version}_linux.x86_64" "$RUNNER_TEMP/godot-bin/godot"
+          unzip -j -q templates.tpz templates/android_debug.apk -d "$HOME/.local/share/godot/export_templates/4.4.1.stable"
+          echo "$RUNNER_TEMP/godot-bin" >> "$GITHUB_PATH"
+
+      - name: Configure Android debug signing
+        run: |
+          set -euo pipefail
+          sdkmanager "platform-tools" "build-tools;35.0.0" "platforms;android-35" >/dev/null
+          mkdir -p "$HOME/.config/godot" "$HOME/.android"
+          key="$HOME/.android/debug.keystore"
+          if [ ! -f "$key" ]; then
+            keytool -genkeypair -keystore "$key" -storepass android -keypass android -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          fi
+          cat > "$HOME/.config/godot/editor_settings-4.4.tres" <<EOF
+          [gd_resource type="EditorSettings" format=3]
+
+          [resource]
+          export/android/android_sdk_path = "$ANDROID_HOME"
+          export/android/java_sdk_path = "$JAVA_HOME"
+          export/android/debug_keystore = "$key"
+          export/android/debug_keystore_user = "androiddebugkey"
+          export/android/debug_keystore_pass = "android"
+          EOF
+
+      - name: Export the standalone driving test
+        run: |
+          set -euo pipefail
+          sed -i -e 's/com.vortexgt.drive"/com.vortexgt.drive.devtest"/' -e 's@package/name="Vortex GT"@package/name="Vortex GT Sürüş Testi"@' export_presets.cfg
+          godot --version
+          godot --headless --editor --path . --import
+          mkdir -p "$RUNNER_TEMP/apk"
+          godot --headless --path . --export-debug Android "$RUNNER_TEMP/apk/VortexGT-Surus-Test.apk"
+          cd "$RUNNER_TEMP/apk"
+          build_tools="$ANDROID_HOME/build-tools/35.0.0"
+          "$build_tools/apksigner" verify --verbose VortexGT-Surus-Test.apk
+          "$build_tools/aapt" dump badging VortexGT-Surus-Test.apk > badging.txt
+          grep -F "package: name='com.vortexgt.drive.devtest'" badging.txt
+          grep -F "arm64-v8a" badging.txt
+          sha256sum VortexGT-Surus-Test.apk > VortexGT-Surus-Test.sha256
+          cat VortexGT-Surus-Test.sha256
+
+      - name: Attach installable test APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: VortexGT-Surus-Test
+          path: |
+            ${{ runner.temp }}/apk/VortexGT-Surus-Test.apk
+            ${{ runner.temp }}/apk/VortexGT-Surus-Test.sha256
+          if-no-files-found: error
+          compression-level: 0
