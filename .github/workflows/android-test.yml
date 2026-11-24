@@ -31,8 +31,10 @@ jobs:
           unzip -q editor.zip
           mkdir -p "$RUNNER_TEMP/godot-bin" "$HOME/.local/share/godot/export_templates/4.4.1.stable"
           install -m 755 "Godot_v${version}_linux.x86_64" "$RUNNER_TEMP/godot-bin/godot"
-          unzip -j -q templates.tpz templates/android_debug.apk -d "$HOME/.local/share/godot/export_templates/4.4.1.stable"
+          unzip -j -q templates.tpz templates/android_debug.apk templates/android_release.apk -d "$HOME/.local/share/godot/export_templates/4.4.1.stable"
           echo "$RUNNER_TEMP/godot-bin" >> "$GITHUB_PATH"
+
+      - uses: android-actions/setup-android@v3
 
       - name: Configure Android debug signing
         run: |
@@ -60,6 +62,8 @@ jobs:
           sed -i -e 's/com.vortexgt.drive"/com.vortexgt.drive.devtest"/' -e 's@package/name="Vortex GT"@package/name="Vortex GT Sürüş Testi"@' export_presets.cfg
           godot --version
           godot --headless --editor --path . --import
+          godot --headless --path . --quit-after 5 2>&1 | tee "$RUNNER_TEMP/scene.log"
+          if grep -E "SCRIPT ERROR|Parse Error|Failed to load script" "$RUNNER_TEMP/scene.log"; then exit 1; fi
           mkdir -p "$RUNNER_TEMP/apk"
           godot --headless --path . --export-debug Android "$RUNNER_TEMP/apk/VortexGT-Surus-Test.apk"
           cd "$RUNNER_TEMP/apk"
