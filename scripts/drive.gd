@@ -4,6 +4,7 @@ const Coast = preload("res://scripts/coast.gd")
 const HUD = preload("res://scripts/hud.gd")
 const TrafficCar = preload("res://scripts/traffic.gd")
 const GT := preload("res://assets/gt/VortexGT.gltf")
+const SkidMarks = preload("res://scripts/skid_marks.gd")
 const WHEEL_IDS := [1,2,3,7]
 @export_group("Vortex GT visual trials")
 @export var trial_hood_finish := false
@@ -13,6 +14,8 @@ const WHEEL_IDS := [1,2,3,7]
 
 var player := Node3D.new()
 var cam := Camera3D.new()
+var skid_marks := SkidMarks.new()
+var rear_mounts: Array[Node3D] = []
 var hud := HUD.new()
 var wheel_mounts: Array[Node3D] = []
 var wheels: Array[Node3D] = []
@@ -65,6 +68,7 @@ func _ready() -> void:
 	sun.directional_shadow_max_distance = 40.0 if trial_near_shadows else 68.0
 	add_child(sun)
 	add_child(Coast.new())
+	add_child(skid_marks)
 	add_child(player)
 	var visual := GT.instantiate() as Node3D
 	player.add_child(visual)
@@ -99,6 +103,8 @@ func _ready() -> void:
 		var pivot:=Node3D.new()
 		mount.add_child(pivot)
 		wheel.reparent(pivot,false)
+		if id in [2, 7]:
+			rear_mounts.append(mount)
 		wheel_mounts.append(mount)
 		wheels.append(pivot)
 	for i in 12:
@@ -224,6 +230,10 @@ func _physics_process(dt: float) -> void:
 		if front_wheel:
 			wheel_mounts[i].rotation.y=-steer*0.38
 	place_player()
+	if looped or not handbrake or speed < 5.0 or absf(slip_angle - drift_course_offset) < deg_to_rad(4.0):
+		skid_marks.tracking = false
+	elif rear_mounts.size() == 2:
+		skid_marks.sample_wheels(rear_mounts[0].global_position, rear_mounts[1].global_position)
 	advance_cinematic(dt)
 	update_camera(dt,looped)
 	hud.speed_kmh=roundi(speed*3.6)
