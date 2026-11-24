@@ -60,30 +60,31 @@ jobs:
       - name: Export the standalone driving test
         run: |
           set -euo pipefail
-          sed -i -e 's/com.vortexgt.drive"/com.vortexgt.drive.drifttest"/' -e 's@package/name="Vortex GT"@package/name="Vortex GT Drift"@' export_presets.cfg
-          sed -i -e 's/^version\/code=1$/version\/code=2/' -e 's/^version\/name="0.1.0"$/version\/name="0.2.0"/' export_presets.cfg
+          sed -i -e 's/com.vortexgt.drive"/com.vortexgt.drive.coastsprint"/' -e 's@package/name="Vortex GT"@package/name="Vortex GT Sahil Sprinti"@' export_presets.cfg
+          sed -i -e 's/^version\/code=1$/version\/code=3/' -e 's/^version\/name="0.1.0"$/version\/name="0.3.0"/' export_presets.cfg
           godot --version
           godot --headless --editor --path . --import
           godot --headless --path . --quit-after 5 2>&1 | tee "$RUNNER_TEMP/scene.log"
           if grep -E "SCRIPT ERROR|Parse Error|Failed to load script" "$RUNNER_TEMP/scene.log"; then exit 1; fi
           godot --headless --path . --script "$GITHUB_WORKSPACE/.github/tests/drift_score.gd"
+          XDG_DATA_HOME="$RUNNER_TEMP/sprint-test-data" godot --headless --path . --script "$GITHUB_WORKSPACE/.github/tests/coast_sprint.gd"
           mkdir -p "$RUNNER_TEMP/apk"
-          godot --headless --path . --export-debug Android "$RUNNER_TEMP/apk/VortexGT-Drift.apk"
+          godot --headless --path . --export-debug Android "$RUNNER_TEMP/apk/VortexGT-Sahil-Sprinti.apk"
           cd "$RUNNER_TEMP/apk"
           build_tools="$ANDROID_HOME/build-tools/35.0.0"
-          "$build_tools/apksigner" verify --verbose VortexGT-Drift.apk
-          "$build_tools/aapt" dump badging VortexGT-Drift.apk > badging.txt
-          grep -F "package: name='com.vortexgt.drive.drifttest'" badging.txt
+          "$build_tools/apksigner" verify --verbose VortexGT-Sahil-Sprinti.apk
+          "$build_tools/aapt" dump badging VortexGT-Sahil-Sprinti.apk > badging.txt
+          grep -F "package: name='com.vortexgt.drive.coastsprint'" badging.txt
           grep -F "arm64-v8a" badging.txt
-          sha256sum VortexGT-Drift.apk > VortexGT-Drift.sha256
-          cat VortexGT-Drift.sha256
+          sha256sum VortexGT-Sahil-Sprinti.apk > VortexGT-Sahil-Sprinti.sha256
+          cat VortexGT-Sahil-Sprinti.sha256
 
       - name: Attach installable test APK
         uses: actions/upload-artifact@v4
         with:
-          name: VortexGT-Drift
+          name: VortexGT-Sahil-Sprinti
           path: |
-            ${{ runner.temp }}/apk/VortexGT-Drift.apk
-            ${{ runner.temp }}/apk/VortexGT-Drift.sha256
+            ${{ runner.temp }}/apk/VortexGT-Sahil-Sprinti.apk
+            ${{ runner.temp }}/apk/VortexGT-Sahil-Sprinti.sha256
           if-no-files-found: error
           compression-level: 0
