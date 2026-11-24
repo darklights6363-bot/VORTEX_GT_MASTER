@@ -5,6 +5,8 @@ signal cinematic_requested
 
 enum Cinematic { IDLE, ARMED, PLAYING }
 var cinematic_state := Cinematic.IDLE
+const CONTROLS_PATH := "user://controls.cfg"
+var arrow_controls := false
 var steering := 0.0
 var throttle := false
 var braking := false
@@ -24,9 +26,31 @@ func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	resized.connect(queue_redraw)
+	var settings := ConfigFile.new()
+	if settings.load(CONTROLS_PATH) == OK:
+		arrow_controls = settings.get_value("steering", "arrows", false) == true
 
 func wheel_center() -> Vector2:
 	return Vector2(119,size.y-118)
+
+func steering_mode_rect() -> Rect2:
+	return Rect2(28, size.y - 265, 183, 45)
+
+func arrow_rect(left: bool) -> Rect2:
+	return Rect2(26 if left else 133, size.y - 153, 91, 82)
+
+func toggle_steering_mode() -> void:
+	arrow_controls = not arrow_controls
+	steering = 0.0
+	wheel_id = -99
+	for id in fingers.keys():
+		if fingers[id] in ["wheel", "left", "right"]:
+			fingers.erase(id)
+	var settings := ConfigFile.new()
+	settings.set_value("steering", "arrows", arrow_controls)
+	if settings.save(CONTROLS_PATH) != OK:
+		push_warning("Could not save steering preference")
+	queue_redraw()
 
 func gas_rect() -> Rect2:
 	return Rect2(size.x-114,size.y-182,83,145)
@@ -66,12 +90,14 @@ func touch(id: int, pos: Vector2, pressed: bool) -> void:
 		if wheel_id == id:
 			wheel_id = -99
 			steering = 0
+	elif steering_mode_rect().has_point(pos):
+		toggle_steering_mode()
 	elif cinematic_rect().has_point(pos):
 		cinematic_requested.emit()
 	elif camera_rect().has_point(pos):
 		camera_mode = (camera_mode+1)%3
 		camera_changed.emit()
-	elif wheel_id == -99 and pos.distance_to(wheel_center()) < 110:
+	elif not arrow_controls and wheel_id == -99 and pos.distance_to(wheel_center()) < 110:
 		wheel_id = id
 		wheel_start = pos.x
 		fingers[id] = "wheel"
@@ -82,6 +108,11 @@ func touch(id: int, pos: Vector2, pressed: bool) -> void:
 	update_pedals()
 
 func pedal_at(pos: Vector2, margin: float) -> String:
+	if arrow_controls:
+		if arrow_rect(true).has_point(pos):
+			return "left"
+		if arrow_rect(false).has_point(pos):
+			return "right"
 	if handbrake_rect().grow(margin).has_point(pos):
 		return "handbrake"
 	if gas_rect().grow(margin).has_point(pos):
@@ -92,6 +123,8 @@ func pedal_at(pos: Vector2, margin: float) -> String:
 
 func update_pedals() -> void:
 	var held := fingers.values()
+	if arrow_controls:
+		steering = float(held.has("right")) - float(held.has("left"))
 	throttle = held.has("gas")
 	braking = held.has("brake")
 	handbrake_touch = held.has("handbrake")
@@ -144,7 +177,7 @@ func _process(dt: float) -> void:
 		ui_time=0
 		queue_redraw()
 
-func _draw() -> void:
+func draw_wheel() -> void:
 	var w := wheel_center()
 	draw_circle(w,86,INK,true,-1,true)
 	draw_arc(w,85,0,TAU,80,Color(1,1,1,0.39),2,true)
@@ -155,6 +188,25 @@ func _draw() -> void:
 		draw_line(w+vec*15,w+vec*61,PAPER,6,true)
 	draw_circle(w,21,Color("#354749"),true,-1,true)
 	draw_arc(w,64,-PI/2-0.12+angle,-PI/2+0.12+angle,10,ACCENT,8,true)
+
+func _draw() -> void:
+	var selector := steering_mode_rect()
+	panel(selector, INK, 9)
+	draw_string(ThemeDB.fallback_font, selector.position + Vector2(0, 28),
+			"KONTROL: OKLAR" if arrow_controls else "KONTROL: DİREKSİYON",
+			HORIZONTAL_ALIGNMENT_CENTER, selector.size.x, 15, PAPER)
+	if arrow_controls:
+		for left: bool in [true, false]:
+			var r := arrow_rect(left)
+			var pressed := steering < 0.0 if left else steering > 0.0
+			panel(r, Color("#355746") if pressed else INK, 14)
+			var center := r.get_center()
+			var sign_x := -1.0 if left else 1.0
+			var tip := center + Vector2(sign_x * 12.0, 0)
+			draw_polyline(PackedVector2Array([center + Vector2(-sign_x * 8.0, -16.0),
+					tip, center + Vector2(-sign_x * 8.0, 16.0)]), PAPER, 5.0, true)
+	else:
+		draw_wheel()
 	pedal(gas_rect(),"GAZ",throttle,true)
 	pedal(brake_rect(),"FREN",braking,false)
 	var lever := handbrake_rect()
