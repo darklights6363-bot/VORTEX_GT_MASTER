@@ -196,7 +196,8 @@ func _physics_process(dt: float) -> void:
 	drift_course_offset = lerpf(drift_course_offset, course_target, 1.0 - exp(-grip_rate * dt))
 	var travel_heading := yaw_offset + drift_course_offset
 	lateral += -sin(travel_heading) * speed * dt
-	if absf(lateral)>6.73:
+	var touched_edge := absf(lateral) > 6.73
+	if touched_edge:
 		lateral=clampf(lateral,-6.73,6.73)
 		speed=move_toward(speed,4.0,dt*10.0) if speed>4 else speed
 	var travel := cos(travel_heading) * speed * dt
@@ -207,6 +208,7 @@ func _physics_process(dt: float) -> void:
 		progress-=Coast.LENGTH
 		for car in traffic:
 			car.progress-=Coast.LENGTH
+	var hit_traffic := false
 	for car in traffic:
 		car.progress+=car.pace*dt
 		var gap:=car.progress-progress
@@ -215,6 +217,7 @@ func _physics_process(dt: float) -> void:
 		elif gap>490.0:
 			car.progress-=480.0
 		if absf(car.progress-progress)<4.28 and absf(car.lane-lateral)<1.72:
+			hit_traffic = true
 			speed=minf(speed,maxf(0,car.pace)*0.72)
 			if car.pace<0:
 				car.progress=progress-58.0
@@ -234,6 +237,7 @@ func _physics_process(dt: float) -> void:
 		skid_marks.tracking = false
 	elif rear_mounts.size() == 2:
 		skid_marks.sample_wheels(rear_mounts[0].global_position, rear_mounts[1].global_position)
+	hud.drift.tick(dt, speed, slip_angle - drift_course_offset, handbrake, touched_edge or hit_traffic)
 	advance_cinematic(dt)
 	update_camera(dt,looped)
 	hud.speed_kmh=roundi(speed*3.6)
@@ -256,6 +260,7 @@ func restore_driving_camera() -> void:
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT and is_node_ready():
+		hud.drift.finish(false)
 		restore_driving_camera()
 
 func advance_cinematic(dt: float) -> void:

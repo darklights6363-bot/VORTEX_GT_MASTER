@@ -11,6 +11,7 @@ var steering := 0.0
 var throttle := false
 var braking := false
 var handbrake_touch := false
+var drift := preload("res://scripts/drift_score.gd").new()
 var speed_kmh := 0
 var distance_km := 0.0
 var camera_mode := 0
@@ -26,6 +27,7 @@ func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	resized.connect(queue_redraw)
+	drift.load_record()
 	var settings := ConfigFile.new()
 	if settings.load(CONTROLS_PATH) == OK:
 		arrow_controls = settings.get_value("steering", "arrows", false) == true
@@ -218,6 +220,15 @@ func _draw() -> void:
 	draw_circle(Vector2(46,76),4,ACCENT)
 	title(Vector2(57,82),"%d FPS" % Engine.get_frames_per_second(),17)
 	title(Vector2(135,82),"%0.1f KM" % distance_km,17)
+	var score_box := Rect2(size.x * 0.5 - 106, 23, 212, 52)
+	panel(score_box, INK, 10)
+	var score_label := "REKOR  %d" % drift.best
+	if drift.multiplier > 0:
+		score_label = "DRİFT  %d   ×%d" % [roundi(drift.points), drift.multiplier]
+	elif drift.message_time > 0.0:
+		score_label = drift.message
+	draw_string(ThemeDB.fallback_font, score_box.position + Vector2(0, 33),
+			score_label, HORIZONTAL_ALIGNMENT_CENTER, score_box.size.x, 17, ACCENT)
 	var cam := camera_rect()
 	panel(cam,INK,9)
 	title(cam.position+Vector2(15,30),["KAM  /  TAKİP","KAM  /  YAKIN","KAM  /  ÖN"][camera_mode],17)
