@@ -2,6 +2,7 @@ extends Control
 
 signal camera_changed
 signal cinematic_requested
+signal sprint_requested
 
 enum Cinematic { IDLE, ARMED, PLAYING }
 var cinematic_state := Cinematic.IDLE
@@ -12,6 +13,7 @@ var throttle := false
 var braking := false
 var handbrake_touch := false
 var drift := preload("res://scripts/drift_score.gd").new()
+var sprint := preload("res://scripts/coast_sprint.gd").new()
 var speed_kmh := 0
 var distance_km := 0.0
 var camera_mode := 0
@@ -28,6 +30,7 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	resized.connect(queue_redraw)
 	drift.load_record()
+	sprint.load_record()
 	var settings := ConfigFile.new()
 	if settings.load(CONTROLS_PATH) == OK:
 		arrow_controls = settings.get_value("steering", "arrows", false) == true
@@ -53,6 +56,9 @@ func toggle_steering_mode() -> void:
 	if settings.save(CONTROLS_PATH) != OK:
 		push_warning("Could not save steering preference")
 	queue_redraw()
+
+func sprint_rect() -> Rect2:
+	return Rect2(28, 121, 223, 57)
 
 func gas_rect() -> Rect2:
 	return Rect2(size.x-114,size.y-182,83,145)
@@ -92,6 +98,8 @@ func touch(id: int, pos: Vector2, pressed: bool) -> void:
 		if wheel_id == id:
 			wheel_id = -99
 			steering = 0
+	elif sprint_rect().has_point(pos):
+		sprint_requested.emit()
 	elif steering_mode_rect().has_point(pos):
 		toggle_steering_mode()
 	elif cinematic_rect().has_point(pos):
@@ -191,7 +199,37 @@ func draw_wheel() -> void:
 	draw_circle(w,21,Color("#354749"),true,-1,true)
 	draw_arc(w,64,-PI/2-0.12+angle,-PI/2+0.12+angle,10,ACCENT,8,true)
 
+func draw_sprint() -> void:
+	var r := sprint_rect()
+	panel(r, INK, 10)
+	var heading := "SAHİL SPRINTİ"
+	var detail := "600 m  ·  BAŞLAT"
+	match sprint.phase:
+		sprint.Phase.COUNTDOWN:
+			heading = "HAZIR  %d" % ceili(sprint.countdown)
+			detail = "Başlangıç  ·  İptal"
+		sprint.Phase.RACING:
+			heading = "%s   ·   %d m" % [sprint.format_time(sprint.elapsed), maxi(0, ceili(sprint.COURSE_LENGTH - sprint.meters))]
+			detail = "Kalan mesafe  ·  İptal"
+		sprint.Phase.FINISHED:
+			heading = "%s  %s" % ["REKOR" if sprint.personal_best else "FİNİŞ", sprint.format_time(sprint.elapsed)]
+			detail = "600 m  ·  Tekrar yarış"
+	title(r.position + Vector2(12, 24), heading, 17, ACCENT)
+	title(r.position + Vector2(12, 46), detail, 14)
+	var results := PackedStringArray()
+	if sprint.phase in [sprint.Phase.RACING, sprint.Phase.FINISHED]:
+		for i in mini(sprint.splits.size(), 2):
+			results.append("%d m    %s" % [(i + 1) * 200, sprint.format_time(sprint.splits[i])])
+	if sprint.best_ms > 0:
+		results.append("En iyi    %s" % sprint.format_time(sprint.best_ms / 1000.0))
+	if not results.is_empty():
+		var box := Rect2(r.position.x, r.end.y + 4, r.size.x, 10 + results.size() * 21)
+		panel(box, INK, 8)
+		for i in results.size():
+			title(box.position + Vector2(12, 20 + i * 21), results[i], 14)
+
 func _draw() -> void:
+	draw_sprint()
 	var selector := steering_mode_rect()
 	panel(selector, INK, 9)
 	draw_string(ThemeDB.fallback_font, selector.position + Vector2(0, 28),

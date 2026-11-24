@@ -17,6 +17,7 @@ var cam := Camera3D.new()
 var skid_marks := SkidMarks.new()
 var rear_mounts: Array[Node3D] = []
 var hud := HUD.new()
+var sprint_markers := Node3D.new()
 var wheel_mounts: Array[Node3D] = []
 var wheels: Array[Node3D] = []
 var traffic: Array[TrafficCar] = []
@@ -68,6 +69,8 @@ func _ready() -> void:
 	sun.directional_shadow_max_distance = 40.0 if trial_near_shadows else 68.0
 	add_child(sun)
 	add_child(Coast.new())
+	add_child(sprint_markers)
+	build_sprint_markers()
 	add_child(skid_marks)
 	add_child(player)
 	var visual := GT.instantiate() as Node3D
@@ -126,8 +129,72 @@ func _ready() -> void:
 	layer.add_child(hud)
 	hud.camera_changed.connect(restore_driving_camera)
 	hud.cinematic_requested.connect(toggle_cinematic)
+	hud.sprint_requested.connect(toggle_sprint)
 	place_player()
 	update_camera(1.0,true)
+
+func build_sprint_markers() -> void:
+	sprint_markers.visible = false
+	for i in range(1, 4):
+		var at := i * hud.sprint.GATE_SPACING
+		var gate := Node3D.new()
+		sprint_markers.add_child(gate)
+		gate.position = Coast.point(at, 0.0, 0.0)
+		gate.rotation.y = Coast.heading(at)
+		var paint := StandardMaterial3D.new()
+		paint.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		paint.albedo_color = Color("#f3f0dd") if i == 3 else Color("#dcb94c")
+		var post := BoxMesh.new()
+		post.size = Vector3(0.15, 2.4, 0.15)
+		post.material = paint
+		for side in [-1.0, 1.0]:
+			var marker := MeshInstance3D.new()
+			marker.mesh = post
+			marker.position = Vector3(side * Coast.HALF_WIDTH, 1.2, 0.0)
+			marker.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			gate.add_child(marker)
+		var stripe := BoxMesh.new()
+		stripe.size = Vector3(Coast.HALF_WIDTH * 2.0, 0.01, 0.28)
+		stripe.material = paint
+		var line := MeshInstance3D.new()
+		line.mesh = stripe
+		line.position.y = 0.028
+		line.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		gate.add_child(line)
+
+func toggle_sprint() -> void:
+	if hud.sprint.phase in [hud.sprint.Phase.COUNTDOWN, hud.sprint.Phase.RACING]:
+		hud.sprint.cancel()
+		sprint_markers.visible = false
+		return
+	hud.drift.finish(false)
+	hud.reset_touches()
+	speed = 0.0
+	progress = 0.0
+	lateral = 5.4
+	steer = 0.0
+	yaw_offset = 0.0
+	slip_angle = 0.0
+	drift_course_offset = 0.0
+	spin = 0.0
+	rear_spin = 0.0
+	for i in wheels.size():
+		wheels[i].rotation.x = 0.0
+		wheel_mounts[i].rotation.y = 0.0
+	skid_marks.tracking = false
+	skid_marks.multimesh.visible_instance_count = 0
+	skid_marks.next_slot = 0
+	for i in traffic.size():
+		traffic[i].progress = 33.0 + i * 37.0
+		place_traffic(traffic[i])
+	if brake_lamp != null:
+		brake_lamp.emission_energy_multiplier = 0.0
+	brake_lamp_on = false
+	hud.speed_kmh = 0
+	hud.sprint.start()
+	sprint_markers.visible = true
+	place_player()
+	restore_driving_camera()
 
 func instance_part_material(visual: Node3D, part_id: int) -> StandardMaterial3D:
 	var part := visual.find_child("tripo_part_%d" % part_id, true, false) as MeshInstance3D
@@ -162,6 +229,9 @@ func place_player() -> void:
 	player.rotation.z=steer*minf(speed/42.0,1.0)*0.021
 
 func _physics_process(dt: float) -> void:
+	dt = hud.sprint.running_delta(dt)
+	if dt <= 0.0:
+		return
 	var gas:=hud.throttle or Input.is_key_pressed(KEY_W) or Input.is_key_pressed(KEY_UP)
 	var brake:=hud.braking or Input.is_key_pressed(KEY_S) or Input.is_key_pressed(KEY_DOWN)
 	if brake != brake_lamp_on:
@@ -237,6 +307,9 @@ func _physics_process(dt: float) -> void:
 		skid_marks.tracking = false
 	elif rear_mounts.size() == 2:
 		skid_marks.sample_wheels(rear_mounts[0].global_position, rear_mounts[1].global_position)
+	hud.sprint.advance(dt, progress)
+	if hud.sprint.phase == hud.sprint.Phase.FINISHED:
+		sprint_markers.visible = false
 	hud.drift.tick(dt, speed, slip_angle - drift_course_offset, handbrake, touched_edge or hit_traffic)
 	advance_cinematic(dt)
 	update_camera(dt,looped)
@@ -261,6 +334,9 @@ func restore_driving_camera() -> void:
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT and is_node_ready():
 		hud.drift.finish(false)
+		if hud.sprint.phase in [hud.sprint.Phase.COUNTDOWN, hud.sprint.Phase.RACING]:
+			hud.sprint.cancel()
+			sprint_markers.visible = false
 		restore_driving_camera()
 
 func advance_cinematic(dt: float) -> void:
